@@ -1,70 +1,99 @@
+from datetime import datetime
 import streamlit as st
-import requests
 import pandas as pd
 import matplotlib.pyplot as plt
-import time
+from collections import Counter
+import requests
 
-API_ENDPOINT = "https://student-api-emk4.onrender.com/all"
-
-st.set_page_config(page_title="Teacher Emotion Dashboard", layout="centered")
-st.title("Classroom Emotion Summary Dashboard")
-
-if st.button("View Dashboard Results"):
+# -------------------- Utils --------------------
+def fetch_all_emotion_data(api_url):
     try:
-        res = requests.get(API_ENDPOINT)
-        if res.status_code != 200:
-            st.error("Failed to fetch data from API.")
-        else:
-            json_data = res.json()
-            if not json_data:
-                st.info("No data available yet.")
-            else:
-                df = pd.DataFrame(json_data)
-
-                # Combine emotion counts across students
-                total_emotions = {}
-                for item in df["emotions"]:
-                    for emo, count in item.items():
-                        total_emotions[emo] = total_emotions.get(emo, 0) + count
-
-                # Pie chart
-                st.subheader("Overall Emotion Distribution")
-                fig1, ax1 = plt.subplots()
-                ax1.pie(total_emotions.values(), labels=total_emotions.keys(), autopct='%1.1f%%')
-                st.pyplot(fig1)
-
-                # Bar chart
-                st.subheader("Total Emotion Counts")
-                fig2, ax2 = plt.subplots()
-                ax2.bar(total_emotions.keys(), total_emotions.values(), color='skyblue')
-                ax2.set_ylabel("Count")
-                st.pyplot(fig2)
-
-                # Line chart by upload time (simulate emotion over time)
-                st.subheader("Emotion Trend Over Upload Time")
-                df_sorted = df.sort_values("timestamp")
-                emotion_df = pd.DataFrame(df_sorted["emotions"].tolist())
-                emotion_df["timestamp"] = pd.to_datetime(df_sorted["timestamp"])
-                emotion_df = emotion_df.set_index("timestamp").fillna(0)
-                fig3, ax3 = plt.subplots()
-                emotion_df.plot(ax=ax3)
-                ax3.set_ylabel("Emotion Count")
-                st.pyplot(fig3)
-
-                # Automated teacher suggestion
-                st.subheader("Teaching Suggestions")
-                suggestions = []
-                if total_emotions.get("neutral", 0) >= sum(total_emotions.values()) * 0.4:
-                    suggestions.append("Many students appear neutral. Consider using more interactive or engaging activities.")
-                if total_emotions.get("happy", 0) >= sum(total_emotions.values()) * 0.4:
-                    suggestions.append("Students appear engaged and happy. Current teaching methods are effective.")
-                if total_emotions.get("sad", 0) >= 2 or total_emotions.get("angry", 0) >= 2:
-                    suggestions.append("Some students show negative emotions. Consider checking in with the class or using anonymous feedback.")
-                if total_emotions.get("surprise", 0) >= 3:
-                    suggestions.append("High surprise detected. Ensure clarity of complex concepts.")
-
-                for s in suggestions:
-                    st.markdown(f"- {s}")
-
+        response = requests.get(api_url)
+        if response.status_code == 200:
+            return response.json().get("data", [])
+        return []
     except Exception as e:
-        st.error(f"Error connecting to API: {e}")
+        print(f"Failed to fetch data: {e}")
+        return []
+
+def summarize_emotions(data):
+    emotion_counter = Counter()
+    for entry in data:
+        emotions = entry.get("emotions", {})
+        emotion_counter.update(emotions)
+    return dict(emotion_counter)
+
+def parse_trend(data):
+    trend = {}
+    for entry in data:
+        ts = entry.get("timestamp", "unknown")
+        emotions = entry.get("emotions", {})
+        for emo, count in emotions.items():
+            trend.setdefault(ts, {}).setdefault(emo, 0)
+            trend[ts][emo] += count
+    return trend
+
+def suggest_teaching_action(summary):
+    suggestions = []
+    if summary.get("sad", 0) + summary.get("fear", 0) >= 3:
+        suggestions.append("Students may feel anxious. Try using encouraging language or adding a break.")
+    if summary.get("neutral", 0) > max(summary.get("happy", 0), 2):
+        suggestions.append("Most students are neutral. Consider more engagement or interaction.")
+    if summary.get("happy", 0) >= 5:
+        suggestions.append("Great! Students seem highly engaged.")
+    if summary.get("angry", 0) >= 2:
+        suggestions.append("Anger detected. Consider asking for feedback or reviewing content clarity.")
+    return suggestions
+
+# -------------------- Streamlit UI --------------------
+st.set_page_config(page_title="Teacher Dashboard", layout="wide")
+st.title("Teacher Dashboard: Class Emotion Summary")
+
+st.markdown("Click the button below to load student emotion results.")
+
+if st.button("Load Student Emotion Data"):
+    API_ENDPOINT = "https://student-api-emk4.onrender.com/all"
+    all_data = fetch_all_emotion_data(API_ENDPOINT)
+
+    if not all_data:
+        st.error("No data found or failed to fetch from API.")
+    else:
+        st.success(f"{len(all_data)} student records loaded.")
+
+        # Total emotion count
+        summary = summarize_emotions(all_data)
+        df_summary = pd.DataFrame(summary.items(), columns=["Emotion", "Count"])
+
+        # Pie chart
+        st.subheader("Overall Emotion Distribution")
+        fig1, ax1 = plt.subplots()
+        ax1.pie(df_summary["Count"], labels=df_summary["Emotion"], autopct="%1.1f%%")
+        st.pyplot(fig1)
+
+        # Bar chart
+        st.subheader("Emotion Frequency")
+        fig2, ax2 = plt.subplots()
+        ax2.bar(df_summary["Emotion"], df_summary["Count"], color="skyblue")
+        st.pyplot(fig2)
+
+        # Time-based emotion trend (if timestamp is present)
+        trend_data = parse_trend(all_data)
+        if trend_data:
+            df_trend = pd.DataFrame.from_dict(trend_data, orient="index").fillna(0)
+            df_trend.index = pd.to_datetime(df_trend.index)
+            df_trend.sort_index(inplace=True)
+
+            st.subheader("Emotion Trend Over Time")
+            fig3, ax3 = plt.subplots()
+            df_trend.plot(ax=ax3, marker="o")
+            plt.xticks(rotation=45)
+            st.pyplot(fig3)
+
+        # Teaching Suggestions
+        st.subheader("Teaching Suggestions")
+        suggestions = suggest_teaching_action(summary)
+        if suggestions:
+            for s in suggestions:
+                st.info(f"- {s}")
+        else:
+            st.success("No major concerns detected. Keep up the good work!")
