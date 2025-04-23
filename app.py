@@ -1,9 +1,9 @@
 from datetime import datetime
+import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from collections import Counter
 import requests
-import streamlit as st
 
 # -------------------- Utility Functions --------------------
 def fetch_all_emotion_data(api_url):
@@ -17,19 +17,18 @@ def fetch_all_emotion_data(api_url):
         return []
 
 def summarize_emotions(data):
-    all_emotions = []
+    emotion_counter = Counter()
     for entry in data:
-        all_emotions.extend(entry.get("emotions", []))
-    emotion_counter = Counter(all_emotions)
+        emotions = entry.get("emotions", {})
+        emotion_counter.update(emotions)
     return dict(emotion_counter)
 
 def parse_trend(data):
     trend = {}
     for entry in data:
         ts = entry.get("timestamp", "unknown")
-        emotions = entry.get("emotions", [])
-        counter = Counter(emotions)
-        for emo, count in counter.items():
+        emotions = entry.get("emotions", {})
+        for emo, count in emotions.items():
             trend.setdefault(ts, {}).setdefault(emo, 0)
             trend[ts][emo] += count
     return trend
@@ -44,32 +43,29 @@ def parse_attention_trend(data):
 
 def suggest_teaching_action(summary, attention_data):
     suggestions = []
-
     if summary.get("sad", 0) + summary.get("fear", 0) >= 3:
-        suggestions.append("😟 Several students appeared sad or afraid. Start next class with encouragement.")
+        suggestions.append("😟 Several students appeared sad or afraid. Consider starting the next session with encouragement or a light warm-up.")
     if summary.get("neutral", 0) > max(summary.get("happy", 0), 2):
-        suggestions.append("😐 Many students felt neutral. Try more interaction or visual aids.")
+        suggestions.append("😐 Most students felt neutral. Try increasing interaction or using more visuals.")
     if summary.get("happy", 0) >= 5:
-        suggestions.append("😊 Students were highly engaged. Continue this with discussions.")
+        suggestions.append("😊 Students were highly engaged. Maintain this with discussions or advanced activities.")
     if summary.get("angry", 0) >= 2:
-        suggestions.append("😡 Anger detected. Clarify confusing topics and request feedback.")
-
+        suggestions.append("😡 Anger detected. Check if any topics were confusing or overwhelming, and ask for feedback.")
     if attention_data:
         avg_attention = sum(attention_data.values()) / len(attention_data)
         if avg_attention < 0.5:
-            suggestions.append("Low attention detected. Consider short breaks or small groups.")
+            suggestions.append("Low attention detected. Consider adding short breaks or small group discussions.")
         elif avg_attention >= 0.8:
-            suggestions.append("Excellent attention levels. Use this for deep dives or harder tasks.")
+            suggestions.append("Excellent attention levels. Use this time for challenging tasks or in-depth discussion.")
         else:
-            suggestions.append("Moderate attention. Use real-life examples to boost engagement.")
-
+            suggestions.append("⚖Moderate attention. Use visual aids or real-life examples to boost engagement.")
     return suggestions
 
 # -------------------- Streamlit UI --------------------
 st.set_page_config(page_title="Teacher Dashboard", layout="wide")
 st.title("Teacher Dashboard: Class Emotion Summary")
 
-st.markdown("Click below to fetch the latest student emotion results:")
+st.markdown("Click the button below to load student emotion results.")
 
 if st.button("Load Student Emotion Data"):
     API_ENDPOINT = "https://student-api-emk4.onrender.com/all"
@@ -78,7 +74,7 @@ if st.button("Load Student Emotion Data"):
     if not all_data:
         st.error("No data found or failed to fetch from API.")
     else:
-        st.success(f"Loaded {len(all_data)} student submissions.")
+        st.success(f"{len(all_data)} student records loaded.")
 
         summary = summarize_emotions(all_data)
         df_summary = pd.DataFrame(summary.items(), columns=["Emotion", "Count"])
@@ -86,13 +82,17 @@ if st.button("Load Student Emotion Data"):
         st.subheader("1. Overall Emotion Distribution")
         fig1, ax1 = plt.subplots()
         ax1.pie(df_summary["Count"], labels=df_summary["Emotion"], autopct="%1.1f%%", startangle=140)
+        st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)
         st.pyplot(fig1)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         st.subheader("2. Emotion Frequency Bar Chart")
         fig2, ax2 = plt.subplots()
         ax2.bar(df_summary["Emotion"], df_summary["Count"], color="skyblue")
         ax2.set_ylabel("Number of Occurrences")
+        st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)
         st.pyplot(fig2)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         trend_data = parse_trend(all_data)
         if trend_data:
@@ -105,7 +105,9 @@ if st.button("Load Student Emotion Data"):
             df_trend.plot(ax=ax3, marker="o")
             ax3.set_ylabel("Emotion Count")
             plt.xticks(rotation=45)
+            st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)
             st.pyplot(fig3)
+            st.markdown("</div>", unsafe_allow_html=True)
 
         attention_data = parse_attention_trend(all_data)
         if attention_data:
@@ -119,12 +121,14 @@ if st.button("Load Student Emotion Data"):
             df_attention.plot(ax=ax4, marker='o', color='orange')
             ax4.set_ylabel("Attention (0 = Low, 1 = High)")
             plt.xticks(rotation=45)
+            st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)
             st.pyplot(fig4)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        st.subheader("5. AI-Powered Teaching Suggestions")
+        st.subheader("Teaching Suggestions")
         suggestions = suggest_teaching_action(summary, attention_data)
         if suggestions:
             for s in suggestions:
                 st.info(f"- {s}")
         else:
-            st.success("No major concerns. Students appear engaged.")
+            st.success("No major concerns detected. Keep up the great work!")
