@@ -63,7 +63,7 @@ def suggest_teaching_action(summary, attention_data):
         elif avg_attention >= 0.8:
             suggestions.append("Excellent attention levels. Use this time for challenging tasks or in-depth discussion.")
         else:
-            suggestions.append("⚖Moderate attention. Use visual aids or real-life examples to boost engagement.")
+            suggestions.append("Moderate attention. Use visual aids or real-life examples to boost engagement.")
     return suggestions
 
 # -------------------- Streamlit UI --------------------
