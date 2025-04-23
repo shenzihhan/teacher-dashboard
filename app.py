@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from collections import Counter
 import requests
 
-# -------------------- Utils --------------------
+# -------------------- Utility Functions --------------------
 def fetch_all_emotion_data(api_url):
     try:
         response = requests.get(api_url)
@@ -33,16 +33,35 @@ def parse_trend(data):
             trend[ts][emo] += count
     return trend
 
-def suggest_teaching_action(summary):
+def parse_attention_trend(data):
+    trend = {}
+    for entry in data:
+        ts = entry.get("timestamp", "unknown")
+        attention = entry.get("attention", 0)
+        trend[ts] = attention
+    return trend
+
+def suggest_teaching_action(summary, attention_data):
     suggestions = []
+
     if summary.get("sad", 0) + summary.get("fear", 0) >= 3:
-        suggestions.append("Students may feel anxious. Try using encouraging language or adding a break.")
+        suggestions.append("😟 Several students appeared sad or afraid. Consider starting the next session with encouragement or a light warm-up.")
     if summary.get("neutral", 0) > max(summary.get("happy", 0), 2):
-        suggestions.append("Most students are neutral. Consider more engagement or interaction.")
+        suggestions.append("😐 Most students felt neutral. Try increasing interaction or using more visuals.")
     if summary.get("happy", 0) >= 5:
-        suggestions.append("Great! Students seem highly engaged.")
+        suggestions.append("😊 Students were highly engaged. Maintain this with discussions or advanced activities.")
     if summary.get("angry", 0) >= 2:
-        suggestions.append("Anger detected. Consider asking for feedback or reviewing content clarity.")
+        suggestions.append("😡 Anger detected. Check if any topics were confusing or overwhelming, and ask for feedback.")
+
+    if attention_data:
+        avg_attention = sum(attention_data.values()) / len(attention_data)
+        if avg_attention < 0.5:
+            suggestions.append("Low attention detected. Consider adding short breaks or small group discussions.")
+        elif avg_attention >= 0.8:
+            suggestions.append("Excellent attention levels. Use this time for challenging tasks or in-depth discussion.")
+        else:
+            suggestions.append("Moderate attention. Use visual aids or real-life examples to boost engagement.")
+
     return suggestions
 
 # -------------------- Streamlit UI --------------------
@@ -60,23 +79,21 @@ if st.button("Load Student Emotion Data"):
     else:
         st.success(f"{len(all_data)} student records loaded.")
 
-        # Total emotion count
+        # Emotion Summary
         summary = summarize_emotions(all_data)
         df_summary = pd.DataFrame(summary.items(), columns=["Emotion", "Count"])
 
-        # Pie chart
         st.subheader("Overall Emotion Distribution")
         fig1, ax1 = plt.subplots()
         ax1.pie(df_summary["Count"], labels=df_summary["Emotion"], autopct="%1.1f%%")
         st.pyplot(fig1)
 
-        # Bar chart
         st.subheader("Emotion Frequency")
         fig2, ax2 = plt.subplots()
         ax2.bar(df_summary["Emotion"], df_summary["Count"], color="skyblue")
         st.pyplot(fig2)
 
-        # Time-based emotion trend (if timestamp is present)
+        # Emotion Trend Over Time
         trend_data = parse_trend(all_data)
         if trend_data:
             df_trend = pd.DataFrame.from_dict(trend_data, orient="index").fillna(0)
@@ -89,11 +106,26 @@ if st.button("Load Student Emotion Data"):
             plt.xticks(rotation=45)
             st.pyplot(fig3)
 
+        # Attention Trend
+        attention_data = parse_attention_trend(all_data)
+        if attention_data:
+            st.subheader("Student Attention Trend")
+            df_attention = pd.DataFrame(list(attention_data.items()), columns=["Timestamp", "Attention"])
+            df_attention["Timestamp"] = pd.to_datetime(df_attention["Timestamp"])
+            df_attention.set_index("Timestamp", inplace=True)
+            df_attention.sort_index(inplace=True)
+
+            fig4, ax4 = plt.subplots()
+            df_attention.plot(ax=ax4, marker='o', color='orange')
+            ax4.set_ylabel("Attention (0 = Low, 1 = High)")
+            plt.xticks(rotation=45)
+            st.pyplot(fig4)
+
         # Teaching Suggestions
         st.subheader("Teaching Suggestions")
-        suggestions = suggest_teaching_action(summary)
+        suggestions = suggest_teaching_action(summary, attention_data)
         if suggestions:
             for s in suggestions:
                 st.info(f"- {s}")
         else:
-            st.success("No major concerns detected. Keep up the good work!")
+            st.success("No major concerns detected. Keep up the great work!")
