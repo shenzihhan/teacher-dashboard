@@ -27,10 +27,15 @@ def parse_trend(data):
     trend = {}
     for entry in data:
         ts = entry.get("timestamp", "unknown")
-        emotions = entry.get("emotions", {})
-        for emo, count in emotions.items():
-            trend.setdefault(ts, {}).setdefault(emo, 0)
-            trend[ts][emo] += count
+        emotions = entry.get("emotions", [])
+        if isinstance(emotions, list):  # 修正：處理 list 格式
+            for emo in emotions:
+                trend.setdefault(ts, {}).setdefault(emo, 0)
+                trend[ts][emo] += 1
+        elif isinstance(emotions, dict):  # 若還有 dict 支援也處理
+            for emo, count in emotions.items():
+                trend.setdefault(ts, {}).setdefault(emo, 0)
+                trend[ts][emo] += count
     return trend
 
 def parse_attention_trend(data):
